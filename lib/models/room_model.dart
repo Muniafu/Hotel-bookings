@@ -28,32 +28,32 @@ class RoomModel {
   });
 
   factory RoomModel.fromMap(Map<String, dynamic> map) => RoomModel(
-    id: map['id'],
-    hotelId: map['hotelId'],
-    name: map['name'] ?? '',
-    type: map['type'] ?? 'Standard',
-    description: map['description'] ?? '',
-    pricePerNight: (map['pricePerNight'] ?? 0).toDouble(),
-    capacity: map['capacity'] ?? 1,
-    features: List<String>.from(map['features'] ?? []),
-    images: List<String>.from(map['images'] ?? []),
-    amenities: List<String>.from(map['amenities'] ?? []),
-    isAvailable: map['isAvailable'] ?? true,
-    size: (map['size'] ?? 0).toDouble(),
-  );
+        id: map['id']?.toString() ?? '',
+        hotelId: map['hotelId']?.toString() ?? '',
+        name: map['name']?.toString() ?? '',
+        type: map['type']?.toString() ?? 'Standard',
+        description: map['description']?.toString() ?? '',
+        pricePerNight: (map['pricePerNight'] ?? 0).toDouble().clamp(0, double.infinity),
+        capacity: (map['capacity'] ?? 1).toInt().clamp(1, 100),
+        features: List<String>.from(map['features'] ?? []),
+        images: List<String>.from(map['images'] ?? []),
+        amenities: List<String>.from(map['amenities'] ?? []),
+        isAvailable: map['isAvailable'] ?? true,
+        size: (map['size'] ?? 0).toDouble().clamp(0, double.infinity),
+      );
 
   Map<String, dynamic> toMap() => {
-    'id': id,
-    'hotelId': hotelId,
-    'name': name,
-    'type': type,
-    'description': description,
-    'pricePerNight': pricePerNight,
-    'capacity': capacity,
-    'features': features,
-    'images': images,
-    'amenities': amenities,
-    'isAvailable': isAvailable,
-    'size': size,
-  };
+        'id': id,
+        'hotelId': hotelId,
+        'name': name,
+        'type': type,
+        'description': description,
+        'pricePerNight': pricePerNight,
+        'capacity': capacity,
+        'features': features,
+        'images': images,
+        'amenities': amenities,
+        'isAvailable': isAvailable,
+        'size': size,
+      };
 }

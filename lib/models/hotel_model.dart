@@ -6,17 +6,14 @@ class HotelModel {
   final String description;
   final List<String> amenities;
   final List<String> images;
+  final String? coverImage;
   final double rating;
-
-  // merchandising / availability / pricing fields
   final bool isPopular;
   final bool isNew;
   final double avgPrice;
   final double basePrice;
   final double taxRate;
   final List<String> seoTags;
-
-  // added for UI badges & availability
   final int availableRooms;
   final List<String> tags;
 
@@ -28,6 +25,7 @@ class HotelModel {
     required this.description,
     required this.amenities,
     required this.images,
+    this.coverImage,
     required this.rating,
     this.isPopular = false,
     this.isNew = false,
@@ -36,12 +34,11 @@ class HotelModel {
     this.taxRate = 0.0,
     this.seoTags = const [],
     this.availableRooms = 0,
-    this.tags = const [], String? coverImage,
+    this.tags = const [],
   });
 
   factory HotelModel.fromMap(Map<String, dynamic>? map, {String? id}) {
     map ??= {};
-    // coords safe conversion
     final coordsRaw = (map['coordinates'] ?? <String, dynamic>{}) as Map<String, dynamic>;
     final Map<String, double> coords = {};
     coordsRaw.forEach((k, v) {
@@ -66,14 +63,15 @@ class HotelModel {
       description: map['description']?.toString() ?? '',
       amenities: parseList(map['amenities']),
       images: parseList(map['images']),
-      rating: (map['rating'] ?? 0).toDouble(),
+      coverImage: map['coverImage']?.toString(),
+      rating: (map['rating'] ?? 0).toDouble().clamp(0, 5),
       isPopular: map['isPopular'] ?? false,
       isNew: map['isNew'] ?? false,
-      avgPrice: (map['avgPrice'] ?? 0).toDouble(),
-      basePrice: (map['basePrice'] ?? 0).toDouble(),
-      taxRate: (map['taxRate'] ?? 0).toDouble(),
+      avgPrice: (map['avgPrice'] ?? 0).toDouble().clamp(0, double.infinity),
+      basePrice: (map['basePrice'] ?? 0).toDouble().clamp(0, double.infinity),
+      taxRate: (map['taxRate'] ?? 0).toDouble().clamp(0, 1),
       seoTags: parseList(map['seoTags']),
-      availableRooms: (map['availableRooms'] ?? 0) is int ? (map['availableRooms'] as int) : ((map['availableRooms'] ?? 0).toInt ? (map['availableRooms'] as int) : int.tryParse((map['availableRooms'] ?? '0').toString()) ?? 0),
+      availableRooms: int.tryParse((map['availableRooms'] ?? '0').toString()) ?? 0,
       tags: parseList(map['tags']),
     );
   }
@@ -86,6 +84,7 @@ class HotelModel {
         'description': description,
         'amenities': amenities,
         'images': images,
+        'coverImage': coverImage,
         'rating': rating,
         'isPopular': isPopular,
         'isNew': isNew,

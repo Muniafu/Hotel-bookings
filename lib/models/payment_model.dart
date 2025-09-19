@@ -4,9 +4,9 @@ class PaymentModel {
   final String userId;
   final double amount;
   final String currency;
-  final String status; // pending, success, failed
-  final String paymentMethod; // card, mpesa, airtel, etc.
-  final String gatewayReference; // Flutterwave tx_ref
+  final String status;
+  final String paymentMethod;
+  final String gatewayReference;
   final DateTime createdAt;
   final DateTime? completedAt;
 
@@ -23,7 +23,6 @@ class PaymentModel {
     this.completedAt,
   });
 
-  // In PaymentModel class
   PaymentModel copyWith({
     String? id,
     String? bookingId,
@@ -51,28 +50,28 @@ class PaymentModel {
   }
 
   factory PaymentModel.fromMap(Map<String, dynamic> map) => PaymentModel(
-    id: map['id'],
-    bookingId: map['bookingId'],
-    userId: map['userId'],
-    amount: (map['amount'] ?? 0).toDouble(),
-    currency: map['currency'] ?? 'KES',
-    status: map['status'] ?? 'pending',
-    paymentMethod: map['paymentMethod'],
-    gatewayReference: map['gatewayReference'],
-    createdAt: DateTime.parse(map['createdAt']),
-    completedAt: map['completedAt'] != null ? DateTime.parse(map['completedAt']) : null,
-  );
+        id: map['id']?.toString() ?? '',
+        bookingId: map['bookingId']?.toString() ?? '',
+        userId: map['userId']?.toString() ?? '',
+        amount: (map['amount'] ?? 0).toDouble().clamp(0, double.infinity),
+        currency: map['currency']?.toString() ?? 'KES',
+        status: map['status']?.toString() ?? 'pending',
+        paymentMethod: map['paymentMethod']?.toString() ?? '',
+        gatewayReference: map['gatewayReference']?.toString() ?? '',
+        createdAt: map['createdAt'] != null ? DateTime.tryParse(map['createdAt']) ?? DateTime.now() : DateTime.now(),
+        completedAt: map['completedAt'] != null ? DateTime.tryParse(map['completedAt']) : null,
+      );
 
   Map<String, dynamic> toMap() => {
-    'id': id,
-    'bookingId': bookingId,
-    'userId': userId,
-    'amount': amount,
-    'currency': currency,
-    'status': status,
-    'paymentMethod': paymentMethod,
-    'gatewayReference': gatewayReference,
-    'createdAt': createdAt.toIso8601String(),
-    'completedAt': completedAt?.toIso8601String(),
-  };
+        'id': id,
+        'bookingId': bookingId,
+        'userId': userId,
+        'amount': amount,
+        'currency': currency,
+        'status': status,
+        'paymentMethod': paymentMethod,
+        'gatewayReference': gatewayReference,
+        'createdAt': createdAt.toIso8601String(),
+        'completedAt': completedAt?.toIso8601String(),
+      };
 }
