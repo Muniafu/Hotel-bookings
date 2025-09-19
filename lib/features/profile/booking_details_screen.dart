@@ -1,7 +1,12 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import '../../models/room_model.dart';
 import '../../providers/booking_provider.dart';
+import '../../providers/auth_provider.dart';
+import '../../providers/hotel_provider.dart';
+import '../../providers/notification_provider.dart';
 import '../../models/booking_model.dart';
 
 class BookingDetailsScreen extends StatefulWidget {
@@ -26,29 +31,50 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
 
   Future<void> _fetchRoomAndUser() async {
     try {
-      final roomSnap = await FirebaseFirestore.instance
-          .collection('rooms')
-          .doc(widget.booking.roomId)
-          .get();
+      final hotelProvider = context.read<HotelProvider>();
+      final rooms = await hotelProvider.getRoomsByHotel(context, widget.booking.hotelId);
+      final room = rooms.firstWhere((r) => r.id == widget.booking.roomId, orElse: () => RoomModel(
+        id: widget.booking.roomId,
+        hotelId: widget.booking.hotelId,
+        name: 'Unknown Room',
+        type: 'Unknown',
+        description: '',
+        pricePerNight: 0.0,
+        capacity: 1,
+        features: [],
+        images: [],
+        amenities: [],
+      ));
       final userSnap = await FirebaseFirestore.instance
           .collection('users')
           .doc(widget.booking.userId)
           .get();
 
-      setState(() {
-        roomData = roomSnap.data();
-        userData = userSnap.data();
-        isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          roomData = room.toMap();
+          userData = userSnap.data();
+          isLoading = false;
+        });
+      }
     } catch (e) {
       debugPrint("Error loading room/user data: $e");
-      setState(() => isLoading = false);
+      if (mounted) setState(() => isLoading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final authProvider = context.watch<AuthProvider>();
     final booking = widget.booking;
+
+    // Role-based check
+    if (authProvider.user == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Navigator.pushReplacementNamed(context, '/login');
+      });
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
 
     return Scaffold(
       appBar: AppBar(title: const Text("Booking Details")),
@@ -66,10 +92,15 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                       height: 200,
                       child: PageView.builder(
                         itemCount: (roomData!['images'] as List).length,
-                        itemBuilder: (_, index) => Image.network(
-                          roomData!['images'][index],
+                        itemBuilder: (_, index) => CachedNetworkImage(
+                          imageUrl: roomData!['images'][index],
                           fit: BoxFit.cover,
                           width: double.infinity,
+                          placeholder: (c, u) => Container(color: Colors.grey[300]),
+                          errorWidget: (c, u, e) => Container(
+                            color: Colors.grey[200],
+                            child: const Icon(Icons.broken_image),
+                          ),
                         ),
                       ),
                     )
@@ -96,11 +127,11 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Card(
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       child: ListTile(
                         leading: CircleAvatar(
                           backgroundColor: Colors.blue.shade100,
-                          child:
-                              const Icon(Icons.person, color: Colors.black54),
+                          child: const Icon(Icons.person, color: Colors.black54),
                         ),
                         title: Text(userData?['name'] ?? "Guest"),
                         subtitle: Text(userData?['email'] ?? "No email provided"),
@@ -113,19 +144,16 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                   // Booking Info Section
                   _sectionTitle("Booking Information"),
                   _infoTile("Booking ID", booking.id),
-                  _infoTile("Check-in",
-                      booking.checkIn.toString().split(" ").first),
-                  _infoTile("Check-out",
-                      booking.checkOut.toString().split(" ").first),
+                  _infoTile("Check-in", booking.checkIn.toString().split(" ").first),
+                  _infoTile("Check-out", booking.checkOut.toString().split(" ").first),
                   _infoTile("Guests", booking.guests.toString()),
 
                   const Divider(height: 32),
 
                   // Payment Info Section
                   _sectionTitle("Payment Details"),
-                  _infoTile("Total Price",
-                      "\$${booking.totalPrice.toStringAsFixed(2)}"),
-                  _infoTile("Payment ID", booking.paymentId),
+                  _infoTile("Total Price", "\$${booking.totalPrice.toStringAsFixed(2)}"),
+                  _infoTile("Payment ID", booking.paymentId.isEmpty ? "Pending" : booking.paymentId),
 
                   const Divider(height: 32),
 
@@ -148,36 +176,58 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.red,
                           minimumSize: const Size.fromHeight(50),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
                         onPressed: () async {
                           final confirm = await showDialog(
                             context: context,
                             builder: (_) => AlertDialog(
                               title: const Text("Cancel Booking?"),
-                              content: const Text(
-                                  "Are you sure you want to cancel this booking?"),
+                              content: const Text("Are you sure you want to cancel this booking?"),
                               actions: [
                                 TextButton(
                                   child: const Text("No"),
-                                  onPressed: () =>
-                                      Navigator.pop(context, false),
+                                  onPressed: () => Navigator.pop(context, false),
                                 ),
                                 ElevatedButton(
                                   style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.red),
+                                    backgroundColor: Colors.red,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
                                   child: const Text("Yes, Cancel"),
-                                  onPressed: () =>
-                                      Navigator.pop(context, true),
+                                  onPressed: () => Navigator.pop(context, true),
                                 ),
                               ],
                             ),
                           );
 
                           if (confirm == true) {
-                            await Provider.of<BookingProvider>(context,
-                                    listen: false)
-                                .cancelBooking(booking.id);
-                            Navigator.pop(context);
+                            try {
+                              await Provider.of<BookingProvider>(context, listen: false)
+                                  .cancelBooking(context, booking.id);
+                              final notificationProvider = context.read<NotificationProvider>();
+                              await notificationProvider.sendNotificationToUser(
+                                userId: booking.userId,
+                                title: "Booking Cancelled",
+                                body: "Your booking ${booking.id.substring(0, 6)} has been cancelled.",
+                              );
+                              await notificationProvider.sendNotificationToAdmin(
+                                title: "Booking Cancelled",
+                                body: "Booking ${booking.id.substring(0, 6)} by user ${booking.userId} has been cancelled.",
+                              );
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text("Booking cancelled successfully")),
+                                );
+                                Navigator.pop(context);
+                              }
+                            } catch (e) {
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text("Error cancelling booking: $e")),
+                                );
+                              }
+                            }
                           }
                         },
                       ),
@@ -239,20 +289,17 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
     );
   }
 
-  Widget _timelineStep(String label, String date, bool completed,
-      {IconData? icon}) {
+  Widget _timelineStep(String label, String date, bool completed, {IconData? icon}) {
     return Column(
       children: [
         CircleAvatar(
-          backgroundColor:
-              completed ? Colors.green : Colors.grey.shade400,
+          backgroundColor: completed ? Colors.green : Colors.grey.shade400,
           child: icon != null
               ? Icon(icon, color: Colors.white, size: 20)
               : const Icon(Icons.check, color: Colors.white, size: 20),
         ),
         const SizedBox(height: 4),
-        Text(label,
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+        Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
         Text(date, style: const TextStyle(fontSize: 10, color: Colors.grey)),
       ],
     );

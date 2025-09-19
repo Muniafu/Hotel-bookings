@@ -13,27 +13,37 @@ class MyBookingsScreen extends StatefulWidget {
 
 class _MyBookingsScreenState extends State<MyBookingsScreen> {
   late Future<void> _loadBookingsFuture;
-  late String _userId;
+  String? _userId;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _userId = Provider.of<AuthProvider>(context, listen: false).user!.uid;
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      if (authProvider.user == null) {
+        Navigator.pushReplacementNamed(context, '/login');
+        return;
+      }
+      _userId = authProvider.user!.uid;
       _loadBookings();
     });
   }
 
   Future<void> _loadBookings() async {
     setState(() {
-      _loadBookingsFuture =
-          Provider.of<BookingProvider>(context, listen: false).loadBookings(_userId);
+      _loadBookingsFuture = Provider.of<BookingProvider>(context, listen: false)
+          .loadBookings(context, _userId!);
     });
   }
 
   @override
   Widget build(BuildContext context) {
+    final authProvider = context.watch<AuthProvider>();
     final bookingProvider = Provider.of<BookingProvider>(context);
+
+    if (authProvider.user == null) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
 
     return Scaffold(
       appBar: AppBar(title: const Text("My Bookings")),
@@ -44,8 +54,15 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
               child: FutureBuilder(
                 future: _loadBookingsFuture,
                 builder: (context, snapshot) {
-                  if (bookingProvider.isLoading &&
-                      bookingProvider.bookings.isEmpty) {
+                  if (snapshot.hasError) {
+                    return ListView(
+                      children: [
+                        const SizedBox(height: 200),
+                        Center(child: Text("Error loading bookings: ${snapshot.error}")),
+                      ],
+                    );
+                  }
+                  if (bookingProvider.isLoading && bookingProvider.bookings.isEmpty) {
                     return const Center(child: CircularProgressIndicator());
                   }
 
@@ -66,8 +83,9 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
                     itemBuilder: (context, index) {
                       final b = bookings[index];
                       return Card(
-                        margin: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 6),
+                        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        elevation: 2,
                         child: ListTile(
                           onTap: () {
                             Navigator.push(

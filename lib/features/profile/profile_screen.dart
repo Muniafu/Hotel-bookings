@@ -11,7 +11,6 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
-
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
@@ -21,12 +20,15 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-
-    final user = Provider.of<AuthProvider>(context, listen: false).user;
-    if (user != null) {
-      _nameController.text = user.name;
-      _phoneController.text = user.phone ?? '';
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final auth = Provider.of<AuthProvider>(context, listen: false);
+      if (auth.user == null) {
+        Navigator.pushReplacementNamed(context, '/login');
+        return;
+      }
+      _nameController.text = auth.user!.name;
+      _phoneController.text = auth.user!.phone ?? '';
+    });
   }
 
   @override
@@ -43,12 +45,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     final user = auth.user;
 
     if (user == null) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
-
-    final theme = Theme.of(context);
 
     return Scaffold(
       appBar: AppBar(
@@ -57,7 +55,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () => _confirmLogout(context, auth),
-          )
+          ),
         ],
         bottom: TabBar(
           controller: _tabController,
@@ -78,18 +76,16 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   }
 
   Widget _buildViewTab(BuildContext context, user) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
         Center(
           child: Stack(
             children: [
-              const CircleAvatar(
+              CircleAvatar(
                 radius: 50,
-                backgroundColor: Colors.grey,
-                child: Icon(Icons.person, size: 50, color: Colors.white),
+                backgroundColor: Colors.grey.shade200,
+                child: const Icon(Icons.person, size: 50, color: Colors.white),
               ),
               Positioned(
                 bottom: 0,
@@ -99,7 +95,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                   backgroundColor: Theme.of(context).primaryColor,
                   child: const Icon(Icons.edit, size: 16, color: Colors.white),
                 ),
-              )
+              ),
             ],
           ),
         ),
@@ -117,8 +113,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   Widget _buildInfoCard(IconData icon, String title, String value) {
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: ListTile(
-        leading: Icon(icon),
+        leading: Icon(icon, color: Colors.indigo),
         title: Text(title),
         subtitle: Text(value),
       ),
@@ -145,13 +142,14 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       onTap: route.isNotEmpty ? () => Navigator.pushNamed(context, route) : null,
       child: Card(
         elevation: 2,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         child: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 30, color: Theme.of(context).primaryColor),
+              Icon(icon, size: 30, color: Colors.indigo),
               const SizedBox(height: 8),
-              Text(label),
+              Text(label, style: const TextStyle(fontSize: 12)),
             ],
           ),
         ),
@@ -171,21 +169,31 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                   const SizedBox(height: 10),
                   TextFormField(
                     controller: _nameController,
-                    decoration: const InputDecoration(labelText: 'Full Name'),
+                    decoration: InputDecoration(
+                      labelText: 'Full Name',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
                     validator: (value) => value == null || value.isEmpty ? 'Name required' : null,
                   ),
                   const SizedBox(height: 10),
                   TextFormField(
                     controller: _phoneController,
-                    decoration: const InputDecoration(labelText: 'Phone'),
+                    decoration: InputDecoration(
+                      labelText: 'Phone',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
                     keyboardType: TextInputType.phone,
                     validator: (value) => value == null || value.isEmpty ? 'Phone required' : null,
                   ),
                   const SizedBox(height: 30),
                   ElevatedButton.icon(
-                    onPressed: () => _saveChanges(context, auth),
+                    onPressed: isLoading ? null : () => _saveChanges(context, auth),
                     icon: const Icon(Icons.save),
                     label: const Text("Save Changes"),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
                   ),
                 ],
               ),
@@ -215,7 +223,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         );
       }
     } finally {
-      setState(() => isLoading = false);
+      if (mounted) setState(() => isLoading = false);
     }
   }
 
@@ -231,6 +239,10 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             onPressed: () => Navigator.pop(context),
           ),
           ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
             child: const Text("Logout"),
             onPressed: () {
               auth.signOut();
