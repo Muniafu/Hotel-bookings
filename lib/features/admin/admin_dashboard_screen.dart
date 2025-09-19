@@ -10,13 +10,11 @@ class AdminDashboardScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final auth = Provider.of<AuthProvider>(context);
-    final isAdmin = auth.user?.role == 'admin';
-
-    if (!isAdmin) {
-      return Scaffold(
-        appBar: AppBar(title: const Text("Access Denied")),
-        body: const Center(child: Text("You are not authorized to view this screen.")),
-      );
+    if (!auth.isAdmin) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Navigator.pushReplacementNamed(context, '/home');
+      });
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     final notificationProvider = Provider.of<NotificationProvider>(context, listen: false);
@@ -68,33 +66,38 @@ class AdminDashboardScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              "Admin Functions",
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-            Expanded(
-              child: GridView.builder(
-                itemCount: adminSections.length,
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2, // responsive on wide screens
-                  crossAxisSpacing: 16,
-                  mainAxisSpacing: 16,
-                  childAspectRatio: 1,
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final crossAxisCount = constraints.maxWidth > 600 ? 3 : 2;
+          return Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  "Admin Functions",
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                 ),
-                itemBuilder: (context, index) {
-                  final item = adminSections[index];
-                  return _DashboardCard(item: item);
-                },
-              ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: GridView.builder(
+                    itemCount: adminSections.length,
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: crossAxisCount,
+                      crossAxisSpacing: 16,
+                      mainAxisSpacing: 16,
+                      childAspectRatio: 1,
+                    ),
+                    itemBuilder: (context, index) {
+                      final item = adminSections[index];
+                      return _DashboardCard(item: item);
+                    },
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
@@ -137,9 +140,7 @@ class _DashboardCard extends StatelessWidget {
 
   Widget _buildCard(BuildContext context, {int badgeCount = 0}) {
     return GestureDetector(
-      onTap: () {
-        Navigator.pushNamed(context, item.routeName);
-      },
+      onTap: () => Navigator.pushNamed(context, item.routeName),
       child: Card(
         elevation: 4,
         color: item.color.withOpacity(0.1),
@@ -161,7 +162,7 @@ class _DashboardCard extends StatelessWidget {
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 16,
-                      color: item.color.withRed(600),
+                      color: item.color,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -186,7 +187,7 @@ class _DashboardCard extends StatelessWidget {
               ),
           ],
         ),
-      ),    
+      ),
     );
   }
 }

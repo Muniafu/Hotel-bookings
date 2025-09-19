@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/hotel_provider.dart';
+import '../../providers/auth_provider.dart';
 import '../../models/hotel_model.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
@@ -15,15 +16,23 @@ class _ManagePropertiesScreenState extends State<ManagePropertiesScreen> {
   String _searchQuery = '';
   String _selectedFilter = 'All';
   String _selectedSort = 'Name';
-  final Set<String> _selectedHotels = {}; // Bulk actions
+  final Set<String> _selectedHotels = {};
   final int _itemsPerPage = 10;
   int _currentPage = 0;
 
   @override
   Widget build(BuildContext context) {
+    // Role-based check
+    final authProvider = Provider.of<AuthProvider>(context);
+    if (!authProvider.isAdmin) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Navigator.pushReplacementNamed(context, '/home');
+      });
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
     final provider = Provider.of<HotelProvider>(context);
 
-    // Apply search + filters
     List<HotelModel> filteredHotels = provider.hotels.where((hotel) {
       final matchesSearch = hotel.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
           hotel.address.toLowerCase().contains(_searchQuery.toLowerCase());
@@ -33,7 +42,6 @@ class _ManagePropertiesScreenState extends State<ManagePropertiesScreen> {
       return matchesSearch && matchesFilter;
     }).toList();
 
-    // Sorting
     filteredHotels.sort((a, b) {
       switch (_selectedSort) {
         case 'Price':
@@ -45,7 +53,6 @@ class _ManagePropertiesScreenState extends State<ManagePropertiesScreen> {
       }
     });
 
-    // Pagination
     final startIndex = _currentPage * _itemsPerPage;
     final endIndex = (startIndex + _itemsPerPage).clamp(0, filteredHotels.length);
     final paginatedHotels = filteredHotels.sublist(startIndex, endIndex);
@@ -58,7 +65,7 @@ class _ManagePropertiesScreenState extends State<ManagePropertiesScreen> {
             IconButton(
               icon: const Icon(Icons.delete),
               onPressed: () {
-                provider.bulkDeleteHotels(_selectedHotels.toList());
+                provider.bulkDeleteHotels(context, _selectedHotels.toList());
                 setState(() => _selectedHotels.clear());
               },
             ),
@@ -70,13 +77,11 @@ class _ManagePropertiesScreenState extends State<ManagePropertiesScreen> {
       ),
       floatingActionButton: FloatingActionButton(
         child: const Icon(Icons.add),
-        onPressed: () {
-          Navigator.pushNamed(context, '/admin/add-property');
-        },
+        onPressed: () => Navigator.pushNamed(context, '/admin/add-property'),
       ),
       body: Column(
         children: [
-          _buildSearchBar(),
+          _buildSearchBar(provider),
           _buildFilterChips(),
           Expanded(
             child: provider.isLoading
@@ -100,7 +105,7 @@ class _ManagePropertiesScreenState extends State<ManagePropertiesScreen> {
     );
   }
 
-  Widget _buildSearchBar() {
+  Widget _buildSearchBar(HotelProvider provider) {
     return Padding(
       padding: const EdgeInsets.all(8),
       child: TextField(
@@ -109,7 +114,10 @@ class _ManagePropertiesScreenState extends State<ManagePropertiesScreen> {
           hintText: "Search by name or location",
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         ),
-        onChanged: (val) => setState(() => _searchQuery = val),
+        onChanged: (val) {
+          setState(() => _searchQuery = val);
+          provider.searchHotels(val);
+        },
       ),
     );
   }
@@ -141,11 +149,9 @@ class _ManagePropertiesScreenState extends State<ManagePropertiesScreen> {
       secondaryBackground: Container(color: Colors.green, alignment: Alignment.centerRight, padding: const EdgeInsets.only(right: 16), child: const Icon(Icons.check, color: Colors.white)),
       confirmDismiss: (direction) async {
         if (direction == DismissDirection.startToEnd) {
-          // Delete
           return await _confirmDelete(hotel);
         } else {
-          // Approve
-          Provider.of<HotelProvider>(context, listen: false).approveHotel(hotel.id);
+          Provider.of<HotelProvider>(context, listen: false).approveHotel(context, hotel.id);
           return false;
         }
       },
@@ -154,18 +160,17 @@ class _ManagePropertiesScreenState extends State<ManagePropertiesScreen> {
         child: InkWell(
           onLongPress: () {
             setState(() {
-              if (isSelected) {
-                _selectedHotels.remove(hotel.id);
-              } else {
-                _selectedHotels.add(hotel.id);
-              }
+              if (isSelected) _selectedHotels.remove(hotel.id);
+              else _selectedHotels.add(hotel.id);
             });
           },
           onTap: () => Navigator.pushNamed(context, '/admin/edit-property', arguments: hotel),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildImageCarousel(hotel.images),
+              LayoutBuilder(
+                builder: (context, constraints) => _buildImageCarousel(hotel.images, constraints.maxWidth),
+              ),
               Padding(
                 padding: const EdgeInsets.all(8.0),
                 child: Row(
@@ -201,16 +206,19 @@ class _ManagePropertiesScreenState extends State<ManagePropertiesScreen> {
     );
   }
 
-  Widget _buildImageCarousel(List<String> images) {
+  Widget _buildImageCarousel(List<String> images, double width) {
     return SizedBox(
-      height: 160,
+      height: width > 600 ? 200 : 160,
       child: PageView(
         children: images.map((url) {
-          return CachedNetworkImage(
-            imageUrl: url,
-            fit: BoxFit.cover,
-            placeholder: (context, _) => Container(color: Colors.grey[300]),
-            errorWidget: (_, __, ___) => const Icon(Icons.error),
+          return Padding(
+            padding: EdgeInsets.symmetric(horizontal: width * 0.02),
+            child: CachedNetworkImage(
+              imageUrl: url,
+              fit: BoxFit.cover,
+              placeholder: (context, _) => Container(color: Colors.grey[300]),
+              errorWidget: (_, __, ___) => const Icon(Icons.error),
+            ),
           );
         }).toList(),
       ),
@@ -219,9 +227,7 @@ class _ManagePropertiesScreenState extends State<ManagePropertiesScreen> {
 
   Widget _buildStarRating(double rating) {
     return Row(
-      children: List.generate(5, (index) {
-        return Icon(index < rating ? Icons.star : Icons.star_border, color: Colors.amber, size: 18);
-      }),
+      children: List.generate(5, (index) => Icon(index < rating ? Icons.star : Icons.star_border, color: Colors.amber, size: 18)),
     );
   }
 
@@ -257,17 +263,16 @@ class _ManagePropertiesScreenState extends State<ManagePropertiesScreen> {
 
   Future<bool> _confirmDelete(HotelModel hotel) async {
     return await showDialog<bool>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text("Delete Property"),
-            content: Text("Are you sure you want to delete '${hotel.name}'?"),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Cancel")),
-              ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text("Delete")),
-            ],
-          ),
-        ) ??
-        false;
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Delete Property"),
+        content: Text("Are you sure you want to delete '${hotel.name}'?"),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Cancel")),
+          ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text("Delete")),
+        ],
+      ),
+    ) ?? false;
   }
 
   void _showSortDialog() {

@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../models/payment_model.dart';
 import '../../providers/payment_provider.dart';
+import '../../providers/auth_provider.dart';
 
 class PaymentDashboardScreen extends StatefulWidget {
   const PaymentDashboardScreen({super.key});
@@ -33,13 +34,20 @@ class _PaymentDashboardScreenState extends State<PaymentDashboardScreen> {
             end: DateTime.now(),
           ),
     );
-    if (picked != null) {
-      setState(() => _dateRange = picked);
-    }
+    if (picked != null) setState(() => _dateRange = picked);
   }
 
   @override
   Widget build(BuildContext context) {
+    // Role-based check
+    final authProvider = Provider.of<AuthProvider>(context);
+    if (!authProvider.isAdmin) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Navigator.pushReplacementNamed(context, '/home');
+      });
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Payment Transactions'),
@@ -50,30 +58,32 @@ class _PaymentDashboardScreenState extends State<PaymentDashboardScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                labelText: 'Search payments',
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: IconButton(
-                  icon: const Icon(Icons.clear),
-                  onPressed: () {
-                    _searchController.clear();
-                    setState(() {});
-                  },
+      body: LayoutBuilder(
+        builder: (context, constraints) => Column(
+          children: [
+            Padding(
+              padding: EdgeInsets.all(constraints.maxWidth > 600 ? 24 : 8),
+              child: TextField(
+                controller: _searchController,
+                decoration: InputDecoration(
+                  labelText: 'Search payments',
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: IconButton(
+                    icon: const Icon(Icons.clear),
+                    onPressed: () {
+                      _searchController.clear();
+                      setState(() {});
+                    },
+                  ),
                 ),
+                onChanged: (value) => setState(() {}),
               ),
-              onChanged: (value) => setState(() {}),
             ),
-          ),
-          Expanded(
-            child: _buildPaymentList(context),
-          ),
-        ],
+            Expanded(
+              child: _buildPaymentList(context),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -90,7 +100,7 @@ class _PaymentDashboardScreenState extends State<PaymentDashboardScreen> {
     }
 
     return FutureBuilder<List<PaymentModel>>(
-      future: paymentProvider.getAdminPayments(),
+      future: paymentProvider.getAdminPayments(context),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
@@ -100,33 +110,22 @@ class _PaymentDashboardScreenState extends State<PaymentDashboardScreen> {
           return const Center(child: Text('No payments found'));
         }
 
-        // Apply filters
         var filteredPayments = snapshot.data!;
         
-        // Status filter
         if (_filterStatus != 'all') {
-          filteredPayments = filteredPayments
-              .where((p) => p.status == _filterStatus)
-              .toList();
+          filteredPayments = filteredPayments.where((p) => p.status == _filterStatus).toList();
         }
 
-        // Date range filter
         if (_dateRange != null) {
-          filteredPayments = filteredPayments
-              .where((p) => p.createdAt.isAfter(_dateRange!.start) && 
-                            p.createdAt.isBefore(_dateRange!.end))
-              .toList();
+          filteredPayments = filteredPayments.where((p) => p.createdAt.isAfter(_dateRange!.start) && p.createdAt.isBefore(_dateRange!.end)).toList();
         }
 
-        // Search filter
         if (_searchController.text.isNotEmpty) {
           final searchTerm = _searchController.text.toLowerCase();
-          filteredPayments = filteredPayments
-              .where((p) => 
-                  p.bookingId.toLowerCase().contains(searchTerm) ||
-                  p.userId.toLowerCase().contains(searchTerm) ||
-                  p.gatewayReference.toLowerCase().contains(searchTerm))
-              .toList();
+          filteredPayments = filteredPayments.where((p) => 
+              p.bookingId.toLowerCase().contains(searchTerm) ||
+              p.userId.toLowerCase().contains(searchTerm) ||
+              p.gatewayReference.toLowerCase().contains(searchTerm)).toList();
         }
 
         if (filteredPayments.isEmpty) {
@@ -207,18 +206,12 @@ class _PaymentDashboardScreenState extends State<PaymentDashboardScreen> {
           ),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('CLOSE'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('CLOSE')),
           if (payment.status == 'pending')
             TextButton(
               onPressed: () {
-                // Add manual verification logic here
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Payment verification initiated')),
-                );
+                if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Payment verification initiated')));
               },
               child: const Text('VERIFY'),
             ),
@@ -233,13 +226,7 @@ class _PaymentDashboardScreenState extends State<PaymentDashboardScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            width: 100,
-            child: Text(
-              '$label:',
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ),
+          SizedBox(width: 100, child: Text('$label:', style: const TextStyle(fontWeight: FontWeight.bold))),
           Expanded(child: Text(value)),
         ],
       ),
@@ -262,7 +249,7 @@ class _PaymentDashboardScreenState extends State<PaymentDashboardScreen> {
                 DropdownMenuItem(value: 'failed', child: Text('Failed')),
                 DropdownMenuItem(value: 'pending', child: Text('Pending')),
               ],
-              onChanged: (value) => setState(() => _filterStatus = value!),
+              onChanged: (value) => setState(() => _filterStatus = value ?? 'all'),
               decoration: const InputDecoration(labelText: 'Status'),
             ),
             const SizedBox(height: 16),
@@ -290,10 +277,7 @@ class _PaymentDashboardScreenState extends State<PaymentDashboardScreen> {
             },
             child: const Text('RESET'),
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('APPLY'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('APPLY')),
         ],
       ),
     );

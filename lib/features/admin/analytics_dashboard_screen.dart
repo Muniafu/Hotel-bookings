@@ -1,16 +1,12 @@
 import 'dart:async';
 import 'dart:math';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+import '../../providers/auth_provider.dart';
 
-/// AnalyticsDashboardScreen
-/// - Time range selector + custom date picker
-/// - Filters by hotel / status / guest type
-/// - Metrics: bookings, unique users, revenue, avg rating,
-///   occupancy rate, ADR, RevPAR, cancellation rate
-/// - Charts: revenue line, bookings bar, status pie, sparklines
 class AnalyticsDashboardScreen extends StatefulWidget {
   const AnalyticsDashboardScreen({super.key});
 
@@ -21,92 +17,145 @@ class AnalyticsDashboardScreen extends StatefulWidget {
 class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> {
   String _selectedPeriod = "Monthly";
   final List<String> _periodOptions = ["Daily", "Weekly", "Monthly", "Custom"];
+  DateTimeRange? _dateRange;
 
   Future<Map<String, dynamic>> fetchAnalytics() async {
-    final bookings = await FirebaseFirestore.instance.collection('bookings').get();
-    final reviews = await FirebaseFirestore.instance.collection('reviews').get();
-
-    double totalRevenue = 0;
-    final Set<String> uniqueUsers = {};
-    int totalNights = 0;
-    int totalRooms = 50; // Example fixed inventory
-
-    for (var doc in bookings.docs) {
-      final data = doc.data();
-      if ((data['status'] ?? '') == 'confirmed') {
-        totalRevenue += (data['totalPrice'] as num).toDouble();
-        uniqueUsers.add(data['userId']);
-        final nights = DateTime.parse(data['checkOut']).difference(DateTime.parse(data['checkIn'])).inDays;
-        totalNights += nights;
+    try {
+      Query query = FirebaseFirestore.instance.collection('bookings');
+      if (_dateRange != null) {
+        query = query
+            .where('checkIn', isGreaterThanOrEqualTo: _dateRange!.start.toIso8601String())
+            .where('checkOut', isLessThanOrEqualTo: _dateRange!.end.toIso8601String());
       }
+      final bookingsSnapshot = await query.get();
+      final reviewsSnapshot = await FirebaseFirestore.instance.collection('reviews').get();
+
+      double totalRevenue = 0;
+      final Set<String> uniqueUsers = <String>{};
+      int totalNights = 0;
+      int totalRooms = 50; // Fetch from hotels collection if needed
+
+      for (var doc in bookingsSnapshot.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        if ((data['status'] ?? '') == 'confirmed') {
+          totalRevenue += (data['totalPrice'] as num?)?.toDouble() ?? 0;
+          uniqueUsers.add(data['userId'] as String);
+          try {
+            final checkIn = DateTime.parse(data['checkIn']);
+            final checkOut = DateTime.parse(data['checkOut']);
+            final nights = checkOut.difference(checkIn).inDays;
+            totalNights += nights;
+          } catch (e) {
+            // Skip invalid dates
+          }
+        }
+      }
+
+      double avgRating = 0;
+      if (reviewsSnapshot.docs.isNotEmpty) {
+        final sumRatings = reviewsSnapshot.docs.fold<double>(
+          0.0,
+          (sum, r) => sum + ((r['rating'] ?? 0) as num).toDouble(),
+        );
+        avgRating = sumRatings / reviewsSnapshot.docs.length;
+      }
+
+      final daysInPeriod = _dateRange?.duration.inDays ?? 30;
+      double occupancyRate = (totalNights / (totalRooms * daysInPeriod)) * 100;
+      double revPar = totalRevenue / totalRooms;
+      double adr = totalNights > 0 ? totalRevenue / totalNights : 0;
+
+      return {
+        'totalBookings': bookingsSnapshot.size,
+        'uniqueUsers': uniqueUsers.length,
+        'totalRevenue': totalRevenue,
+        'averageRating': avgRating,
+        'totalReviews': reviewsSnapshot.size,
+        'occupancyRate': occupancyRate.clamp(0, 100),
+        'revPar': revPar,
+        'adr': adr,
+      };
+    } catch (e) {
+      print('Analytics error: $e');
+      return {}; // Empty on error
     }
-
-    double avgRating = 0;
-    if (reviews.docs.isNotEmpty) {
-      final sumRatings = reviews.docs.fold<double>(
-        0.0,
-        (sum, r) => sum + ((r['rating'] ?? 0) as num).toDouble(),
-      );
-      avgRating = sumRatings / reviews.docs.length;
-    }
-
-    double occupancyRate = (totalNights / (totalRooms * 30)) * 100; // Assuming 30-day month
-    double revPar = totalRevenue / totalRooms;
-    double adr = totalRevenue / (totalNights > 0 ? totalNights : 1);
-
-    return {
-      'totalBookings': bookings.size,
-      'uniqueUsers': uniqueUsers.length,
-      'totalRevenue': totalRevenue,
-      'averageRating': avgRating,
-      'totalReviews': reviews.size,
-      'occupancyRate': occupancyRate,
-      'revPar': revPar,
-      'adr': adr,
-    };
   }
 
   @override
   Widget build(BuildContext context) {
+    // Role-based check
+    final authProvider = Provider.of<AuthProvider>(context);
+    if (!authProvider.isAdmin) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Navigator.pushReplacementNamed(context, '/home');
+      });
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text("Analytics Dashboard"),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.date_range),
+            onPressed: () async {
+              final picked = await showDateRangePicker(
+                context: context,
+                firstDate: DateTime(2020),
+                lastDate: DateTime.now(),
+                initialDateRange: _dateRange,
+              );
+              if (picked != null) setState(() => _dateRange = picked);
+            },
+          ),
           DropdownButton<String>(
             value: _selectedPeriod,
-            items: _periodOptions
-                .map((period) => DropdownMenuItem<String>(
-                      value: period,
-                      child: Text(period),
-                    ))
-                .toList(),
-            onChanged: (value) {
-              if (value != null) {
-                setState(() => _selectedPeriod = value);
-              }
-            },
+            items: _periodOptions.map((period) => DropdownMenuItem<String>(value: period, child: Text(period))).toList(),
+            onChanged: (value) => setState(() => _selectedPeriod = value ?? 'Monthly'),
           ),
         ],
       ),
       body: FutureBuilder<Map<String, dynamic>>(
         future: fetchAnalytics(),
         builder: (context, snapshot) {
-          if (!snapshot.hasData) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
+          }
+          if (!snapshot.hasData || snapshot.data!.isEmpty) {
+            return const Center(child: Text('No data available'));
           }
           final data = snapshot.data!;
 
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                _buildMetricCard("Total Revenue", "\$${data['totalRevenue'].toStringAsFixed(2)}"),
-                _buildMetricCard("Occupancy Rate", "${data['occupancyRate'].toStringAsFixed(1)}%"),
-                _buildMetricCard("RevPAR", "\$${data['revPar'].toStringAsFixed(2)}"),
-                _buildMetricCard("ADR", "\$${data['adr'].toStringAsFixed(2)}"),
-                const SizedBox(height: 20),
-                _buildTrendChart(),
-              ],
+          return LayoutBuilder(
+            builder: (context, constraints) => SingleChildScrollView(
+              padding: EdgeInsets.all(constraints.maxWidth > 600 ? 24 : 16),
+              child: Column(
+                children: [
+                  GridView.count(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    crossAxisCount: constraints.maxWidth > 600 ? 4 : 2,
+                    childAspectRatio: 2.5,
+                    crossAxisSpacing: 16,
+                    mainAxisSpacing: 16,
+                    children: [
+                      _buildMetricCard("Total Revenue", "\$${data['totalRevenue'].toStringAsFixed(2)}", Icons.attach_money),
+                      _buildMetricCard("Total Bookings", "${data['totalBookings']}", Icons.book_online),
+                      _buildMetricCard("Unique Users", "${data['uniqueUsers']}", Icons.people),
+                      _buildMetricCard("Avg Rating", "${data['averageRating'].toStringAsFixed(1)}", Icons.star),
+                      _buildMetricCard("Occupancy Rate", "${data['occupancyRate'].toStringAsFixed(1)}%", Icons.hotel),
+                      _buildMetricCard("RevPAR", "\$${data['revPar'].toStringAsFixed(2)}", Icons.trending_up),
+                      _buildMetricCard("ADR", "\$${data['adr'].toStringAsFixed(2)}", Icons.trending_up),
+                      _buildMetricCard("Total Reviews", "${data['totalReviews']}", Icons.rate_review),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    height: 300,
+                    child: _buildTrendChart(),
+                  ),
+                ],
+              ),
             ),
           );
         },
@@ -114,15 +163,21 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> {
     );
   }
 
-  Widget _buildMetricCard(String title, String value) {
+  Widget _buildMetricCard(String title, String value, IconData icon) {
     return Card(
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      child: ListTile(
-        title: Text(title),
-        trailing: Text(
-          value,
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-        ),
+      elevation: 4,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 40, color: Colors.blue),
+          const SizedBox(height: 8),
+          Text(title, textAlign: TextAlign.center, style: const TextStyle(fontSize: 12)),
+          Text(
+            value,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+          ),
+        ],
       ),
     );
   }
@@ -133,46 +188,39 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> {
       (index) => FlSpot(index.toDouble(), (1000 + Random().nextInt(4000)).toDouble()),
     );
 
-    return SizedBox(
-      height: 300,
-      child: LineChart(
-        LineChartData(
-          titlesData: FlTitlesData(
-            leftTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                reservedSize: 40,
-                getTitlesWidget: (value, meta) {
-                  return SideTitleWidget(
-                    meta: meta,
-                    child: Text("\$${value.toInt()}"),
-                  );
-                },
-              ),
-            ),
-            bottomTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                getTitlesWidget: (value, meta) {
-                  return SideTitleWidget(
-                    meta: meta,
-                    child: Text("M${value.toInt() + 1}"),
-                  );
-                },
+    return LineChart(
+      LineChartData(
+        titlesData: FlTitlesData(
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 40,
+              getTitlesWidget: (value, meta) => SideTitleWidget(
+                child: Text("\$${value.toInt()}"),
+                meta: meta,
               ),
             ),
           ),
-          borderData: FlBorderData(show: true),
-          lineBarsData: [
-            LineChartBarData(
-              spots: spots,
-              isCurved: true,
-              color: Colors.blue,
-              barWidth: 3,
-              dotData: FlDotData(show: false),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              getTitlesWidget: (value, meta) => SideTitleWidget(
+                child: Text("M${value.toInt() + 1}"),
+                meta: meta,
+              ),
             ),
-          ],
+          ),
         ),
+        borderData: FlBorderData(show: true),
+        lineBarsData: [
+          LineChartBarData(
+            spots: spots,
+            isCurved: true,
+            color: Colors.blue,
+            barWidth: 3,
+            dotData: const FlDotData(show: false),
+          ),
+        ],
       ),
     );
   }
