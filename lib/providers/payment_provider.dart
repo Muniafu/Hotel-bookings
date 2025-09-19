@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-
 import '../models/payment_model.dart';
 import '../services/payment_service.dart';
 
@@ -22,6 +21,7 @@ class PaymentProvider with ChangeNotifier {
     required double amount,
     required String email,
     String? phone,
+    String checkoutMethod = 'card',
   }) async {
     _isLoading = true;
     _error = null;
@@ -34,24 +34,26 @@ class PaymentProvider with ChangeNotifier {
         bookingId: bookingId,
         amount: amount,
         email: email,
-        phone: phone, checkoutMethod: '',
+        phone: phone,
+        checkoutMethod: checkoutMethod,
       );
     } catch (e) {
       _error = 'Payment error: $e';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_error!)));
     } finally {
       _isLoading = false;
       notifyListeners();
     }
   }
 
-  Future<List<PaymentModel>> getAdminPayments() async {
-    _isLoading = true;
-    notifyListeners();
-
+  Future<List<PaymentModel>> getAdminPayments(BuildContext context) async {
     try {
+      _isLoading = true;
+      notifyListeners();
       return await _paymentService.getPaymentsForAdmin();
     } catch (e) {
-      _error = 'Failed to load payments: ${e.toString()}';
+      _error = 'Failed to load payments: $e';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_error!)));
       return [];
     } finally {
       _isLoading = false;

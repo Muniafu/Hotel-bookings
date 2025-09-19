@@ -1,6 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:muniafu/models/notification_model.dart';
+import '../models/notification_model.dart';
 
 class NotificationProvider with ChangeNotifier {
   final _firestore = FirebaseFirestore.instance;
@@ -8,7 +8,6 @@ class NotificationProvider with ChangeNotifier {
 
   List<NotificationModel> get notifications => _notifications;
 
-  // Fetch notifications for a specific user
   Stream<List<NotificationModel>> listenToUserNotifications(String userId) {
     return _firestore
         .collection('notifications')
@@ -22,12 +21,39 @@ class NotificationProvider with ChangeNotifier {
     });
   }
 
-  // Listen to a global count for unread notifications(for admin)
   Stream<int> listenToUnreadNotificationCount() {
     return _firestore
         .collection('notifications')
         .where('read', isEqualTo: false)
         .snapshots()
         .map((snapshot) => snapshot.docs.length);
+  }
+
+  Future<void> sendNotificationToAdmin({required String title, required String body}) async {
+    try {
+      await _firestore.collection('notifications').add({
+        'userId': 'admin', // Generic admin ID
+        'title': title,
+        'body': body,
+        'timestamp': FieldValue.serverTimestamp(),
+        'read': false,
+      });
+    } catch (e) {
+      print('Error sending admin notification: $e');
+    }
+  }
+
+  Future<void> sendNotificationToUser({required String userId, required String title, required String body}) async {
+    try {
+      await _firestore.collection('notifications').add({
+        'userId': userId,
+        'title': title,
+        'body': body,
+        'timestamp': FieldValue.serverTimestamp(),
+        'read': false,
+      });
+    } catch (e) {
+      print('Error sending user notification: $e');
+    }
   }
 }
