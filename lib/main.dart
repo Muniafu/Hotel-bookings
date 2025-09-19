@@ -41,7 +41,7 @@ void main() async {
   await notificationService.initFCM();
 
   final paymentService = PaymentService(
-    paystackPublicKeyTest: 'pk_test_********', // Replace with your actual public key
+    paystackPublicKeyTest: 'pk_test_*******', // Replace with your actual public key
     paystackSecretKey: 'sk_test_********', // Replace with your actual secret key
     isSandbox: true,
   );
