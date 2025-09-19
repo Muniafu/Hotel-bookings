@@ -7,35 +7,41 @@ class AuthService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   Future<User?> signUp(String email, String password, String name) async {
-    final cred = await _auth.createUserWithEmailAndPassword(email: email, password: password);
-    final user = UserModel(uid: cred.user!.uid, email: email, name: name);
-    await _firestore.collection('users').doc(user.uid).set(user.toMap());
-    return cred.user;
-  }
-
-  Future<void> updateUserProfile(String uid, String name, String phone) async {
-    await FirebaseFirestore.instance.collection('users').doc(uid).update({
-      'name': name,
-      'phone': phone,
-    });
-  }
-
-
-  Future<User?> signIn(String email, String password) async {
     try {
-      final cred = await _auth.signInWithEmailAndPassword(
-        email: email, 
-        password: password
-      );
+      final cred = await _auth.createUserWithEmailAndPassword(email: email, password: password);
+      final user = UserModel(uid: cred.user!.uid, email: email, name: name);
+      await _firestore.collection('users').doc(user.uid).set(user.toMap());
       return cred.user;
-    } on FirebaseException {
-      throw _authErrorToMessage;
     } catch (e) {
-      throw 'An unkown error occured';
+      print('Sign-up error: $e');
+      rethrow;
     }
   }
 
-  
+  Future<void> updateUserProfile(String uid, String name, String phone, {String? fcmToken}) async {
+    try {
+      final updateData = {'name': name, 'phone': phone};
+      if (fcmToken != null) {
+        updateData['fcmToken'] = fcmToken;
+      }
+      await FirebaseFirestore.instance.collection('users').doc(uid).update(updateData);
+    } catch (e) {
+      print('Error updating profile: $e');
+      rethrow;
+    }
+  }
+
+  Future<User?> signIn(String email, String password) async {
+    try {
+      final cred = await _auth.signInWithEmailAndPassword(email: email, password: password);
+      return cred.user;
+    } on FirebaseAuthException catch (e) {
+      throw _authErrorToMessage(e);
+    } catch (e) {
+      throw 'An unknown error occurred';
+    }
+  }
+
   String _authErrorToMessage(FirebaseAuthException e) {
     switch (e.code) {
       case 'user-not-found':
@@ -50,12 +56,22 @@ class AuthService {
   }
 
   Future<void> signOut() async {
-    await _auth.signOut();
+    try {
+      await _auth.signOut();
+    } catch (e) {
+      print('Sign-out error: $e');
+      rethrow;
+    }
   }
 
   Future<UserModel?> getUserProfile(String uid) async {
-    final doc = await _firestore.collection('users').doc(uid).get();
-    return doc.exists ? UserModel.fromMap(doc.data()!) : null;
+    try {
+      final doc = await _firestore.collection('users').doc(uid).get();
+      return doc.exists ? UserModel.fromMap(doc.data()!) : null;
+    } catch (e) {
+      print('Error fetching user profile: $e');
+      return null;
+    }
   }
 
   Stream<User?> get authStateChanges => _auth.authStateChanges();
